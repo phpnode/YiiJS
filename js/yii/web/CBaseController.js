@@ -1,0 +1,277 @@
+/*global Yii, php, $, jQuery, alert, clearInterval, clearTimeout, document, event, frames, history, Image, location, name, navigator, Option, parent, screen, setInterval, setTimeout, window, XMLHttpRequest */
+/**
+ * CBaseController is the base class for {@link CController} and {@link CWidget}.
+ * 
+ * It provides the common functionalities shared by controllers who need to render views.
+ * 
+ * CBaseController also implements the support for the following features:
+ * <ul>
+ * <li>{@link CClipWidget Clips} : a clip is a piece of captured output that can be inserted elsewhere.</li>
+ * <li>{@link CWidget Widgets} : a widget is a self-contained sub-controller with its own view and model.</li>
+ * <li>{@link COutputCache Fragment cache} : fragment cache selectively caches a portion of the output.</li>
+ * </ul>
+ * 
+ * To use a widget in a view, use the following in the view:
+ * <pre>
+ * this.widget('path.to.widgetClass',{'property1':'value1',+++});
+ * </pre>
+ * or
+ * <pre>
+ * this.beginWidget('path.to.widgetClass',{'property1':'value1',+++});
+ * // ... display other contents here
+ * this.endWidget();
+ * </pre>
+ * 
+ * To create a clip, use the following:
+ * <pre>
+ * this.beginClip('clipID');
+ * // ... display the clip contents
+ * this.endClip();
+ * </pre>
+ * Then, in a different view or place, the captured clip can be inserted as:
+ * <pre>
+ * document.write(this.clips['clipID']);
+ * </pre>
+ * 
+ * To use fragment cache, do as follows,
+ * <pre>
+ * if(this.beginCache('cacheID',{'property1':'value1',+++})
+ * {
+ *     // ... display the content to be cached here
+ *    this.endCache();
+ * }
+ * </pre>
+ * 
+ * @originalAuthor Qiang Xue <qiang.xue@gmail.com>
+ * @version $Id: CBaseController.php 2799 2011-01-01 19:31:13Z qiang.xue $
+ * @package system.web
+ * @since 1.0
+ * @author Charles Pick
+ * @class
+ * @extends Yii.CComponent
+ */
+Yii.CBaseController = function CBaseController() {
+};
+Yii.CBaseController.prototype = new Yii.CComponent();
+Yii.CBaseController.prototype.constructor =  Yii.CBaseController;
+Yii.CBaseController.prototype._widgetStack = [];
+/**
+ * Returns the view script file according to the specified view name.
+ * This method must be implemented by child classes.
+ * @param {String} viewName view name
+ * @returns {String} the file path for the named view. False if the view cannot be found.
+ */
+Yii.CBaseController.prototype.getViewFile = function (viewName) {
+	};
+/**
+ * Renders a view file.
+ * 
+ * @param {String} viewFile view file path
+ * @param {Array} data data to be extracted and made available to the view
+ * @param {Function} callback The callback to execute
+ * @throws {Yii.CException} if the view file does not exist
+ */
+Yii.CBaseController.prototype.renderFile = function (viewFile, data, callback) {
+		var renderer;
+		if (data === undefined) {
+			data = null;
+		}
+		if((renderer=Yii.app().getViewRenderer())!==undefined && renderer.fileExtension==='.'+(viewFile.split(".").pop())) {
+			return renderer.renderFile(this,viewFile,data,callback);
+		}
+		else {
+			return this.renderInternal(viewFile,data,callback);
+		}
+		
+	};
+/**
+ * Renders a view file.
+ * This method includes the view file as a JavaScript script
+ * and captures the display result if required.
+ * @param {String} viewFile view file
+ * @param {Array} data data to be extracted and made available to the view file
+ * @param {Function} callback The callback to execute with the rendering result
+ * @returns {String} the rendering result. Null if the rendering result is not required.
+ */
+Yii.CBaseController.prototype.renderInternal = function (_viewFile_, _data_, _callback_) {
+		var data;
+		if (_data_ === undefined) {
+			_data_ = null;
+		}
+		
+		return Yii.include(_viewFile_,true, _callback_);
+		
+	};
+/**
+ * Creates a widget and initializes it.
+ * This method first creates the specified widget instance.
+ * It then configures the widget's properties with the given initial values.
+ * At the end it calls {@link CWidget::init} to initialize the widget.
+ * Starting from version 1.1, if a {@link CWidgetFactory widget factory} is enabled,
+ * this method will use the factory to create the widget, instead.
+ * @param {String} className class name (can be in path alias format)
+ * @param {Array} properties initial property values
+ * @returns {Yii.CWidget} the fully initialized widget instance.
+ */
+Yii.CBaseController.prototype.createWidget = function (className, properties) {
+		var widget;
+		if (properties === undefined) {
+			properties = [];
+		}
+		widget=Yii.app().getWidgetFactory().createWidget(this,className,properties);
+		
+		widget.init();
+		return widget;
+	};
+/**
+ * Creates a widget and executes it.
+ * @param {String} className the widget class name or class in dot syntax (e.g. application.widgets.MyWidget)
+ * @param {Array} properties list of initial property values for the widget (Property Name => Property Value)
+ * @param {Boolean} captureOutput whether to capture the output of the widget. If true, the method will capture
+ * and return the output generated by the widget. If false, the output will be directly sent for display
+ * and the widget object will be returned. This parameter is available since version 1.1.2.
+ * @returns {Mixed} the widget instance when $captureOutput is false, or the widget output when $captureOutput is true.
+ */
+Yii.CBaseController.prototype.widget = function (className, properties, captureOutput) {
+		var widget;
+		if (properties === undefined) {
+			properties = [];
+		}
+		widget=this.createWidget(className,properties);
+		return(widget.run());
+		
+	};
+/**
+ * Creates a widget and executes it.
+ * This method is similar to {@link widget()} except that it is expecting
+ * a {@link endWidget()} call to end the execution.
+ * @param {String} className the widget class name or class in dot syntax (e.g. application.widgets.MyWidget)
+ * @param {Array} properties list of initial property values for the widget (Property Name => Property Value)
+ * @returns {Yii.CWidget} the widget created to run
+ * @see endWidget
+ */
+Yii.CBaseController.prototype.beginWidget = function (className, properties) {
+		var widget;
+		if (properties === undefined) {
+			properties = [];
+		}
+		widget=this.createWidget(className,properties);
+		
+		this._widgetStack.push(widget);
+		return widget;
+	};
+/**
+ * Ends the execution of the named widget.
+ * This method is used together with {@link beginWidget()}.
+ * @param {String} id optional tag identifying the method call for debugging purpose.
+ * @returns {Yii.CWidget} the widget just ended running
+ * @throws {Yii.CException} if an extra endWidget call is made
+ * @see beginWidget
+ */
+Yii.CBaseController.prototype.endWidget = function (id) {
+		var widget;
+		if (id === undefined) {
+			id = '';
+		}
+		if((widget=php.array_pop(this._widgetStack))!==null)
+		{
+			widget.run();
+			return widget;
+		}
+		else {
+			throw new Yii.CException(Yii.t('yii','{controller} has an extra endWidget({id}) call in its view.',
+				{'{controller}':php.get_class(this),'{id}':id}));
+		}
+	};
+/**
+ * Begins recording a clip.
+ * This method is a shortcut to beginning {@link CClipWidget}.
+ * @param {String} id the clip ID.
+ * @param {Array} properties initial property values for {@link CClipWidget}.
+ */
+Yii.CBaseController.prototype.beginClip = function (id, properties) {
+		if (properties === undefined) {
+			properties = [];
+		}
+		properties.id=id;
+		this.beginWidget('CClipWidget',properties);
+	};
+/**
+ * Ends recording a clip.
+ * This method is an alias to {@link endWidget}.
+ */
+Yii.CBaseController.prototype.endClip = function () {
+		this.endWidget('CClipWidget');
+	};
+/**
+ * Begins fragment caching.
+ * This method will display cached content if it is availabe.
+ * If not, it will start caching and would expect a {@link endCache()}
+ * call to end the cache and save the content into cache.
+ * A typical usage of fragment caching is as follows,
+ * <pre>
+ * if(this.beginCache(id))
+ * {
+ *     // ...generate content here
+ *     this.endCache();
+ * }
+ * </pre>
+ * @param {String} id a unique ID identifying the fragment to be cached.
+ * @param {Array} properties initial property values for {@link COutputCache}.
+ * @returns {Boolean} whether we need to generate content for caching. False if cached version is available.
+ * @see endCache
+ */
+Yii.CBaseController.prototype.beginCache = function (id, properties) {
+		var cache;
+		if (properties === undefined) {
+			properties = [];
+		}
+		properties.id=id;
+		cache=this.beginWidget('COutputCache',properties);
+		if(cache.getIsContentCached())
+		{
+			this.endCache();
+			return false;
+		}
+		else {
+			return true;
+		}
+	};
+/**
+ * Ends fragment caching.
+ * This is an alias to {@link endWidget}.
+ * @see beginCache
+ */
+Yii.CBaseController.prototype.endCache = function () {
+		this.endWidget('COutputCache');
+	};
+/**
+ * Begins the rendering of content that is to be decorated by the specified view.
+ * @param {Mixed} view the name of the view that will be used to decorate the content. The actual view script
+ * is resolved via {@link getViewFile}. If this parameter is null (default),
+ * the default layout will be used as the decorative view.
+ * Note that if the current controller does not belong to
+ * any module, the default layout refers to the application's {@link CWebApplication::layout default layout};
+ * If the controller belongs to a module, the default layout refers to the module's
+ * {@link CWebModule::layout default layout}.
+ * @param {Object} data the variables (name=>value) to be extracted and made available in the decorative view.
+ * This parameter has been available since version 1.0.4
+ * @see beginContent
+ * @see CContentDecorator
+ */
+Yii.CBaseController.prototype.beginContent = function (view, data) {
+		if (view === undefined) {
+			view = null;
+		}
+		if (data === undefined) {
+			data = {};
+		}
+		this.beginWidget('CContentDecorator',{'view':view, 'data':data});
+	};
+/**
+ * Ends the rendering of content.
+ * @see beginContent
+ */
+Yii.CBaseController.prototype.endContent = function () {
+		this.endWidget('CContentDecorator');
+	}
